@@ -542,7 +542,7 @@ static void print_help(char const * argv0)
 	if (argv0[l] == '/' || argv0[l] == '\\')
 		++l;
 
-	std::cout << "Usage: " << argv0 + l << " [--succeed] [--no-dia-fail] [--no-unks] [-y <sympath>] [-c <check-file>] [-o <output-file>] <pe-file>" << std::endl;
+	std::cout << "Usage: " << argv0 + l << " [--warning] [--no-dia-fail] [--no-unks] [-y <sympath>] [-c <check-file>] [-o <output-file>] <pe-file>" << std::endl;
 }
 
 int _main(int argc, char *argv[])
@@ -561,7 +561,7 @@ int _main(int argc, char *argv[])
 			print_help(argv[0]);
 			return 0;
 		}
-		else if (strcmp(argv[i], "--succeed") == 0)
+		else if (strcmp(argv[i], "--warning") == 0)
 		{
 			succeed = true;
 		}
@@ -792,9 +792,9 @@ int _main(int argc, char *argv[])
 		if (!removed_lines.empty())
 		{
 			if (!succeed)
-				std::cout << "error: cross-module check failed\n";
+				std::cout << chkpath << "(1): error: cross-module check failed\n";
 			else
-				std::cout << "warning: cross-module check failed\n";
+				std::cout << chkpath << "(1): warning: cross-module check failed\n";
 
 			for (std::set<std::string>::const_iterator it = removed_lines.begin(); it != removed_lines.end(); ++it)
 				std::cout << '-' << *it << '\n';
