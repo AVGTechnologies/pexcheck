@@ -542,7 +542,7 @@ static void print_help(char const * argv0)
 	if (argv0[l] == '/' || argv0[l] == '\\')
 		++l;
 
-	std::cout << "Usage: " << argv0 + l << " [--warning] [--no-dia-fail] [--no-unks] [-y <sympath>] [-c <check-file>] [-o <output-file>] <pe-file>" << std::endl;
+	std::cout << "Usage: " << argv0 + l << " [--warning] [--no-dia-fail] [--no-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
 }
 
 int _main(int argc, char *argv[])
@@ -611,6 +611,12 @@ int _main(int argc, char *argv[])
 		}
 	}
 
+	if (exepath.empty())
+	{
+		print_help(argv[0]);
+		return 1;
+	}
+
 	bool add_exports = true;
 	std::set<std::string> fn_patterns, type_patterns, check_lines;
 	std::vector<std::string> config_lines;
@@ -620,6 +626,12 @@ int _main(int argc, char *argv[])
 		add_exports = false;
 
 		std::ifstream fin(chkpath);
+		if (!fin.is_open())
+		{
+			std::cerr << "error: couldn't open " << chkpath << std::endl;
+			return 3;
+		}
+
 		std::string line;
 		while (std::getline(fin, line))
 		{
@@ -651,6 +663,12 @@ int _main(int argc, char *argv[])
 
 		while (std::getline(fin, line))
 			check_lines.insert(line);
+
+		if (fin.bad() || fin.fail())
+		{
+			std::cerr << "error: failure while reading " << chkpath << std::endl;
+			return 3;
+		}
 	}
 	else
 	{
@@ -677,7 +695,15 @@ int _main(int argc, char *argv[])
 		hrchk hr;
 	}
 
-	hrchk source->loadDataForExe(to_utf16(exepath).c_str(), sympath.empty()? 0: to_utf16(sympath).c_str(), 0);
+	{
+		HRESULT hr = source->loadDataForExe(to_utf16(exepath).c_str(), sympath.empty()? 0: to_utf16(sympath).c_str(), 0);
+		if (hr == E_PDB_NOT_FOUND)
+		{
+			std::cerr << "error: failed to open file or its associated PDB: " << exepath << std::endl;
+			return 3;
+		}
+		hrchk hr;
+	}
 
 	CComPtr<IDiaSession> session;
 	hrchk source->openSession(&session);
@@ -777,6 +803,11 @@ int _main(int argc, char *argv[])
 		else
 		{
 			fout.open(outputpath);
+			if (!fout.is_open())
+			{
+				std::cerr << "error: couldn't open " << outputpath << std::endl;
+				return 3;
+			}
 			out = &fout;
 		}
 
