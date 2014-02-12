@@ -551,6 +551,7 @@ int _main(int argc, char *argv[])
 	std::string sympath;
 	std::string chkpath;
 	std::string outputpath;
+	std::string diffpath = "-";
 	bool succeed = false;
 	bool no_dia_fail = false;
 	bool no_unks = false;
@@ -599,6 +600,15 @@ int _main(int argc, char *argv[])
 				return 2;
 			}
 			outputpath = argv[i];
+		}
+		else if (strcmp(argv[i], "--diff") == 0)
+		{
+			if (++i >= argc)
+			{
+				print_help(argv[0]);
+				return 2;
+			}
+			diffpath = argv[i];
 		}
 		else
 		{
@@ -825,16 +835,30 @@ int _main(int argc, char *argv[])
 
 	if (!check_lines.empty())
 	{
+		std::ofstream fout;
+		std::ostream * out;
+		if (diffpath == "-")
+		{
+			out = &std::cout;
+		}
+		else
+		{
+			fout.open(diffpath);
+			if (!fout.is_open())
+			{
+				std::cerr << "error: couldn't open " << diffpath << std::endl;
+				return 3;
+			}
+			out = &fout;
+		}
+
 		std::set<std::string> removed_lines = fmt.get_removed_lines(check_lines);
 		if (!removed_lines.empty())
 		{
-			if (!succeed)
-				std::cout << chkpath << "(1): error: cross-module check failed\n";
-			else
-				std::cout << chkpath << "(1): warning: cross-module check failed\n";
+			std::cout << (diffpath == "-"? chkpath: diffpath) << "(1): " << (succeed? "warning": "error") << ": cross-module check failed\n";
 
 			for (std::set<std::string>::const_iterator it = removed_lines.begin(); it != removed_lines.end(); ++it)
-				std::cout << '-' << *it << '\n';
+				*out << '-' << *it << '\n';
 
 			if (!succeed)
 				return 1;
