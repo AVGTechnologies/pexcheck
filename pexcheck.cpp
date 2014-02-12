@@ -336,8 +336,6 @@ public:
 			CComPtr<IDiaEnumSymbols> children;
 			hrchk sym->findChildren(SymTagFunction, 0, 0, &children);
 
-			std::map<LONG, std::string> vfns;
-
 			CComPtr<IDiaSymbol> child;
 			for (; SUCCEEDED(children->Next(1, &child, &celt)) && celt == 1; child.Release())
 			{
@@ -364,12 +362,9 @@ public:
 				hrsok child->get_type(&fn_type);
 
 				std::ostringstream lss;
-				lss << ofs / m_ptr_size << ":fn:" << to_utf8(fn_name) << "(" << this->format_type(fn_type) << ")";
-				vfns[ofs / m_ptr_size] = lss.str();
+				lss << "vfn " << to_utf8(name) << " " << ofs / m_ptr_size << ":" << to_utf8(fn_name) << "(" << this->format_type(fn_type) << ")";
+				m_lines.insert(lss.str());
 			}
-
-			for (auto it = vfns.begin(); it != vfns.end(); ++it)
-				oss << " " << it->second;
 		}
 
 		{
