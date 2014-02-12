@@ -855,7 +855,7 @@ int _main(int argc, char *argv[])
 		std::set<std::string> removed_lines = fmt.get_removed_lines(check_lines);
 		if (!removed_lines.empty())
 		{
-			std::cout << (diffpath == "-"? chkpath: diffpath) << "(1): " << (succeed? "warning": "error") << ": cross-module check failed\n";
+			std::cout << (diffpath == "-"? chkpath: diffpath) << "(1): " << (succeed? "warning": "error") << ": cross-module compatibility check failed\n";
 
 			for (std::set<std::string>::const_iterator it = removed_lines.begin(); it != removed_lines.end(); ++it)
 				*out << '-' << *it << '\n';
