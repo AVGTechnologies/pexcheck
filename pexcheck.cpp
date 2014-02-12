@@ -449,7 +449,7 @@ public:
 				return m_sections[i].PointerToRawData + (rva - m_sections[i].VirtualAddress);
 		}
 
-		throw std::runtime_error("translation failure");
+		throw std::runtime_error("error: failed to translate rva to file offset");
 	}
 
 private:
@@ -459,6 +459,8 @@ private:
 std::set<std::string> get_exported_addresses(std::string const & fname, int & ptr_size)
 {
 	std::ifstream fin(fname.c_str(), std::ios::binary);
+	if (!fin.is_open())
+		throw std::runtime_error("error: failed to open file: " + fname);
 
 	IMAGE_DOS_HEADER header;
 	fin.read((char *)&header, sizeof header);
@@ -493,6 +495,10 @@ std::set<std::string> get_exported_addresses(std::string const & fname, int & pt
 		ptr_size = 8;
 	}
 
+	std::set<std::string> exported_names;
+	if (!export_dir.VirtualAddress)
+		return exported_names;
+
 	size_t offs = section_table.rva_to_offset(export_dir.VirtualAddress);
 	fin.seekg(offs);
 
@@ -522,7 +528,6 @@ std::set<std::string> get_exported_addresses(std::string const & fname, int & pt
 	fin.seekg(section_table.rva_to_offset(export_dir_table.AddressOfNames));
 	fin.read((char *)export_name_entries.data(), export_name_entries.size() * sizeof(DWORD));
 
-	std::set<std::string> exported_names;
 	for (size_t i = 0; i < export_dir_table.NumberOfNames; ++i)
 	{
 		size_t idx = export_name_entries[i] - export_dir.VirtualAddress;
@@ -690,6 +695,12 @@ int _main(int argc, char *argv[])
 		{
 			std::cerr << "warning: DIA SDK initialization failed\n";
 			return 0;
+		}
+
+		if (hr == REGDB_E_CLASSNOTREG)
+		{
+			std::cerr << "error: DIA SDK is not installed\n";
+			return 1;
 		}
 
 		hrchk hr;
