@@ -664,7 +664,7 @@ int _main(int argc, char *argv[])
 		while (std::getline(fin, line))
 			check_lines.insert(line);
 
-		if (fin.bad() || fin.fail())
+		if (fin.bad())
 		{
 			std::cerr << "error: failure while reading " << chkpath << std::endl;
 			return 3;
