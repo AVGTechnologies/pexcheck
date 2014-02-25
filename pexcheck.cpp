@@ -379,7 +379,7 @@ public:
 			CComPtr<IDiaEnumSymbols> children;
 			hrchk sym->findChildren(SymTagData, 0, 0, &children);
 
-			std::map<LONG, std::string> data;
+			std::vector<std::pair<LONG, std::string> > data;
 
 			CComPtr<IDiaSymbol> child;
 			for (; SUCCEEDED(children->Next(1, &child, &celt)) && celt == 1; child.Release())
@@ -397,9 +397,10 @@ public:
 
 				std::ostringstream lss;
 				lss << ofs << ":var:" << this->format_type(data_type);
-				data[ofs] = lss.str();
+				data.push_back(std::make_pair(ofs, lss.str()));
 			}
 
+			std::sort(data.begin(), data.end());
 			for (auto it = data.begin(); it != data.end(); ++it)
 				oss << " " << it->second;
 		}
