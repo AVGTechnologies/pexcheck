@@ -746,7 +746,7 @@ int _main(int argc, char *argv[])
 
 	bool add_exports = true;
 	std::set<std::string> fn_patterns, type_patterns, check_lines;
-	std::vector<std::string> config_lines;
+	std::vector<std::string> config_lines, ignored_checks;
 
 	if (!chkpath.empty())
 	{
@@ -781,6 +781,10 @@ int _main(int argc, char *argv[])
 			{
 				fn_patterns.insert(line.substr(3));
 			}
+			else if (line[0] == '~')
+			{
+				ignored_checks.push_back(line.substr(1));
+			}
 			else
 			{
 				type_patterns.insert(line);
@@ -789,7 +793,20 @@ int _main(int argc, char *argv[])
 		}
 
 		while (std::getline(fin, line))
-			check_lines.insert(line);
+		{
+			bool ignore = false;
+			for (std::string const & ig : ignored_checks)
+			{
+				if (line.size() >= ig.size() && line.substr(0, ig.size()) == ig)
+				{
+					ignore = true;
+					break;
+				}
+			}
+
+			if (!ignore)
+				check_lines.insert(line);
+		}
 
 		if (fin.bad())
 		{
@@ -973,6 +990,8 @@ int _main(int argc, char *argv[])
 		if (!removed_lines.empty())
 		{
 			std::cout << (diffpath == "-"? chkpath: diffpath) << "(1): " << (succeed? "warning": "error") << ": cross-module compatibility check failed\n";
+			if (!chkpath.empty() && diffpath != "-")
+				std::cout << chkpath << "(1): note: using this pexcheck template\n";
 
 			for (std::set<std::string>::const_iterator it = removed_lines.begin(); it != removed_lines.end(); ++it)
 				*out << '-' << *it << '\n';
