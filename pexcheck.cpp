@@ -141,10 +141,7 @@ public:
 
 		case SymTagUDT:
 			{
-				CComBSTR name;
-				hrsok type->get_name(&name);
-				res = to_utf8(name.m_str);
-				this->add_udt(type);
+				res = this->add_udt(type);
 			}
 			break;
 
@@ -259,22 +256,33 @@ public:
 		m_lines.insert(tmp);
 	}
 
-	void add_udt(CComPtr<IDiaSymbol> const & sym)
+	std::string get_udt_name(CComPtr<IDiaSymbol> const & sym)
 	{
+		CComBSTR name;
+		hrsok sym->get_name(&name);
+
+		std::string name8 = to_utf8(name);
+
+		if (name8.find("<unnamed") != std::string::npos)
+			name8 = "<unnamed>";
+
+		return name8;
+	}
+
+	std::string add_udt(CComPtr<IDiaSymbol> const & sym)
+	{
+		std::string name8 = this->get_udt_name(sym);
+
 		DWORD type_id;
 		hrsok sym->get_symIndexId(&type_id);
 
 		if (m_udts.find(type_id) != m_udts.end())
-			return;
+			return name8;
 
 		m_udts.insert(type_id);
 
 		std::ostringstream oss;
-		oss << "type ";
-
-		CComBSTR name;
-		hrsok sym->get_name(&name);
-		oss << to_utf8(name);
+		oss << "type " << name8;
 
 		ULONG celt;
 
@@ -362,7 +370,7 @@ public:
 				hrsok child->get_type(&fn_type);
 
 				std::ostringstream lss;
-				lss << "vfn " << to_utf8(name) << " " << ofs / m_ptr_size << ":" << to_utf8(fn_name) << "(" << this->format_type(fn_type) << ")";
+				lss << "vfn " << name8 << " " << ofs / m_ptr_size << ":" << to_utf8(fn_name) << "(" << this->format_type(fn_type) << ")";
 				m_lines.insert(lss.str());
 			}
 		}
@@ -397,6 +405,7 @@ public:
 		}
 
 		m_lines.insert(oss.str());
+		return name8;
 	}
 
 	void emit(std::ostream & fout)
