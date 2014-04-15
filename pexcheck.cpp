@@ -659,7 +659,7 @@ static void print_help(char const * argv0)
 	if (argv0[l] == '/' || argv0[l] == '\\')
 		++l;
 
-	std::cout << "Usage: " << argv0 + l << " [--warning] [--no-dia-fail] [--no-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
+	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
 }
 
 int _main(int argc, char *argv[])
@@ -672,6 +672,7 @@ int _main(int argc, char *argv[])
 	bool succeed = false;
 	bool no_dia_fail = false;
 	bool no_unks = false;
+	bool do_fail = false;
 	for (int i = 1; i < argc; ++i)
 	{
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
@@ -682,6 +683,10 @@ int _main(int argc, char *argv[])
 		else if (strcmp(argv[i], "--warning") == 0)
 		{
 			succeed = true;
+		}
+		else if (strcmp(argv[i], "--do-fail") == 0)
+		{
+			do_fail = true;
 		}
 		else if (strcmp(argv[i], "--no-unks") == 0)
 		{
@@ -996,7 +1001,7 @@ int _main(int argc, char *argv[])
 			for (std::set<std::string>::const_iterator it = removed_lines.begin(); it != removed_lines.end(); ++it)
 				*out << '-' << *it << '\n';
 
-			if (!succeed)
+			if (!succeed || do_fail)
 				return 1;
 		}
 	}
