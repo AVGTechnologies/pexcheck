@@ -522,10 +522,14 @@ public:
 			fout << *it << "\n";
 	}
 
-	std::set<std::string> get_removed_lines(std::set<std::string> const & templ)
+	std::set<std::string> get_removed_lines(std::set<std::string> const & templ, bool remove_unks)
 	{
 		std::set<std::string> res;
 		std::set_difference(templ.begin(), templ.end(), m_lines.begin(), m_lines.end(), std::inserter(res, res.begin()));
+
+		if (remove_unks)
+			res.erase(res.lower_bound("unk "), res.lower_bound("unk!"));
+
 		return res;
 	}
 
@@ -659,7 +663,7 @@ static void print_help(char const * argv0)
 	if (argv0[l] == '/' || argv0[l] == '\\')
 		++l;
 
-	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
+	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
 }
 
 int _main(int argc, char *argv[])
@@ -673,6 +677,7 @@ int _main(int argc, char *argv[])
 	bool no_dia_fail = false;
 	bool no_unks = false;
 	bool do_fail = false;
+	bool diff_unks = false;
 	for (int i = 1; i < argc; ++i)
 	{
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
@@ -731,6 +736,10 @@ int _main(int argc, char *argv[])
 				return 2;
 			}
 			diffpath = argv[i];
+		}
+		else if (strcmp(argv[i], "--diff-unks") == 0)
+		{
+			diff_unks = true;
 		}
 		else
 		{
@@ -991,7 +1000,7 @@ int _main(int argc, char *argv[])
 			out = &fout;
 		}
 
-		std::set<std::string> removed_lines = fmt.get_removed_lines(check_lines);
+		std::set<std::string> removed_lines = fmt.get_removed_lines(check_lines, /*remove_unks=*/!diff_unks);
 		if (!removed_lines.empty())
 		{
 			std::cout << (diffpath == "-"? chkpath: diffpath) << "(1): " << (succeed? "warning": "error") << ": cross-module compatibility check failed\n";
