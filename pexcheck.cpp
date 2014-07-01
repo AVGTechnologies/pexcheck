@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <iostream>
 #include <iomanip>
+#include <regex>
 
 static uint32_t const crc32c_table[] =
 {
@@ -133,11 +134,17 @@ static std::wstring to_utf16(std::string const & s)
 	return std::wstring(res.data(), len);
 }
 
+struct follow_t
+{
+	std::regex templ;
+	std::vector<std::string> repls;
+};
+
 class type_formatter
 {
 public:
-	explicit type_formatter(std::set<std::string> const & exported_fn_names, int ptr_size)
-		: m_exported_fn_names(exported_fn_names), m_ptr_size(ptr_size)
+	explicit type_formatter(std::set<std::string> const & exported_fn_names, std::vector<follow_t> const & follows, std::set<std::string> & follow_matches, int ptr_size)
+		: m_exported_fn_names(exported_fn_names), m_ptr_size(ptr_size), m_follows(follows), m_follow_matches(follow_matches)
 	{
 	}
 
@@ -331,7 +338,7 @@ public:
 		tmp.append(" ");
 		tmp.append(this->format_type(fn_type, /*simple_unnamed=*/false));
 
-		m_lines.insert(tmp);
+		this->add_line(tmp);
 	}
 
 	std::string get_udt_name(CComPtr<IDiaSymbol> const & sym, bool simple_unnamed)
@@ -459,7 +466,7 @@ public:
 
 				std::ostringstream lss;
 				lss << "vfn " << udt_name << " " << ofs / m_ptr_size << ":" << to_utf8(fn_name) << "(" << this->format_type(fn_type, simple_unnamed) << ")";
-				m_lines.insert(lss.str());
+				this->add_line(lss.str());
 			}
 		}
 
@@ -512,7 +519,7 @@ public:
 
 		std::ostringstream oss;
 		oss << "type " << name8 << this->get_udt_contents(sym, /*simple_unnamed=*/false, name8);
-		m_lines.insert(oss.str());
+		this->add_line(oss.str());
 		return name8;
 	}
 
@@ -538,13 +545,29 @@ public:
 		std::set<std::string> unhandled_exports;
 		std::set_difference(m_exported_fn_names.begin(), m_exported_fn_names.end(), handled_exports.begin(), handled_exports.end(), std::inserter(unhandled_exports, unhandled_exports.begin()));
 		for (std::string const & s : unhandled_exports)
-			m_lines.insert("unk " + s);
+			this->add_line("unk " + s);
 	}
 
 private:
+	void add_line(std::string const & line)
+	{
+		m_lines.insert(line);
+		for (auto && follow : m_follows)
+		{
+			std::match_results<std::string::const_iterator> mrs;
+			if (std::regex_search(line, mrs, follow.templ))
+			{
+				for (auto && fmt: follow.repls)
+					m_follow_matches.insert(mrs.format(fmt));
+			}
+		}
+	}
+
 	std::map<DWORD, std::string> m_udts;
 	std::set<std::string> m_lines;
 	std::set<std::string> m_exported_fn_names;
+	std::vector<follow_t> const & m_follows;
+	std::set<std::string> & m_follow_matches;
 	int m_ptr_size;
 };
 
@@ -759,7 +782,9 @@ int _main(int argc, char *argv[])
 	}
 
 	bool add_exports = true;
-	std::set<std::string> fn_patterns, type_patterns, check_lines;
+	std::map<std::string, std::regex> fn_patterns, type_patterns;
+	std::set<std::string> check_lines;
+	std::vector<follow_t> follow_exprs;
 	std::vector<std::string> config_lines, ignored_checks;
 
 	if (!chkpath.empty())
@@ -777,23 +802,63 @@ int _main(int argc, char *argv[])
 		while (std::getline(fin, line))
 		{
 			config_lines.push_back(line);
-
 			if (line.empty())
 			{
 				config_lines.pop_back();
 				break;
 			}
-			if (line == "%exported_functions")
+
+			size_t hashpos = line.find('#');
+			if (hashpos != std::string::npos)
+				line = line.substr(0, hashpos);
+
+			if (line.empty())
+			{
+			}
+			else if (line == "%exported_functions")
 			{
 				add_exports = true;
 			}
 			else if (line.substr(0, 5) == "type ")
 			{
-				type_patterns.insert(line.substr(5));
+				line = line.substr(5);
+				type_patterns[line] = std::regex(line);
 			}
 			else if (line.substr(0, 3) == "fn ")
 			{
-				fn_patterns.insert(line.substr(3));
+				line = line.substr(3);
+				fn_patterns[line] = std::regex(line);
+			}
+			else if (line.substr(0, 8) == "follow /")
+			{
+				follow_t f;
+
+				size_t first_pos = 7;
+				size_t last_pos = line.find('/', first_pos + 1);
+				while (last_pos != std::string::npos)
+				{
+					f.repls.push_back(line.substr(first_pos + 1, last_pos - first_pos - 1));
+					first_pos = last_pos;
+					last_pos = line.find('/', first_pos + 1);
+				}
+
+				if (!f.repls.empty())
+				{
+					f.templ.assign(f.repls[0]);
+					f.repls.erase(f.repls.begin());
+
+					if (f.repls.empty())
+					{
+						for (size_t i = 0; i < f.templ.mark_count(); ++i)
+						{
+							char buf[32];
+							sprintf(buf, "$%d", i + 1);
+							f.repls.push_back(buf);
+						}
+					}
+
+					follow_exprs.push_back(f);
+				}
 			}
 			else if (line[0] == '~')
 			{
@@ -801,8 +866,8 @@ int _main(int argc, char *argv[])
 			}
 			else
 			{
-				type_patterns.insert(line);
-				fn_patterns.insert(line);
+				type_patterns[line] = std::regex(line);
+				fn_patterns[line] = std::regex(line);
 			}
 		}
 
@@ -897,9 +962,13 @@ int _main(int argc, char *argv[])
 		}
 	}
 
-	type_formatter fmt(demangled_exports, ptr_size);
+	std::set<std::string> follow_matches;
+	type_formatter fmt(demangled_exports, follow_exprs, follow_matches, ptr_size);
 	std::set<std::string> handled_exports;
 
+	size_t last_follow_matches_size = 0;
+
+	for (;;)
 	{
 		CComPtr<IDiaEnumSymbols> globalFunctions;
 		hrchk global->findChildren(SymTagFunction, 0, 0, &globalFunctions);
@@ -931,8 +1000,15 @@ int _main(int argc, char *argv[])
 				CComBSTR name;
 				globalFunction->get_name(&name);
 
-				if (fn_patterns.find(to_utf8(name.m_str)) != fn_patterns.end())
-					do_add = true;
+				std::string name8 = to_utf8(name.m_str);
+				for (auto && kv : fn_patterns)
+				{
+					if (std::regex_match(name8, kv.second))
+					{
+						do_add = true;
+						break;
+					}
+				}
 			}
 
 			if (do_add)
@@ -948,9 +1024,24 @@ int _main(int argc, char *argv[])
 			CComBSTR name;
 			hrchk globalType->get_name(&name);
 
-			if (type_patterns.find(to_utf8(name.m_str)) != type_patterns.end())
-				fmt.add_udt(globalType);
+			std::string name8 = to_utf8(name.m_str);
+			for (auto && kv : type_patterns)
+			{
+				if (std::regex_match(name8, kv.second))
+				{
+					fmt.add_udt(globalType);
+					break;
+				}
+			}
 		}
+
+		if (last_follow_matches_size == follow_matches.size())
+			break;
+
+		for (auto && fm : follow_matches)
+			type_patterns[fm] = fn_patterns[fm] = std::regex(fm);
+
+		last_follow_matches_size = follow_matches.size();
 	}
 
 	if (add_exports && !no_unks)
