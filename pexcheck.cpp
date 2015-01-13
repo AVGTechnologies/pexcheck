@@ -775,6 +775,26 @@ int _main(int argc, char *argv[])
 		}
 	}
 
+	hrchk CoInitialize(0);
+
+	CComPtr<IDiaDataSource> source;
+	{
+		HRESULT hr = CoCreateInstance(CLSID_DiaSource, NULL, CLSCTX_INPROC_SERVER, __uuidof(IDiaDataSource), (void **)&source);
+		if (no_dia_fail && hr != S_OK)
+		{
+			std::cerr << "warning: DIA SDK initialization failed\n";
+			return 0;
+		}
+
+		if (hr == REGDB_E_CLASSNOTREG)
+		{
+			std::cerr << "error: DIA SDK is not installed\n";
+			return 1;
+		}
+
+		hrchk hr;
+	}
+
 	if (exepath.empty())
 	{
 		print_help(argv[0]);
@@ -903,26 +923,6 @@ int _main(int argc, char *argv[])
 
 	int ptr_size;
 	std::set<std::string> exported_names = get_exported_addresses(exepath, ptr_size);
-
-	hrchk CoInitialize(0);
-
-	CComPtr<IDiaDataSource> source;
-	{
-		HRESULT hr = CoCreateInstance(CLSID_DiaSource, NULL, CLSCTX_INPROC_SERVER, __uuidof(IDiaDataSource), (void **)&source);
-		if (no_dia_fail && hr != S_OK)
-		{
-			std::cerr << "warning: DIA SDK initialization failed\n";
-			return 0;
-		}
-
-		if (hr == REGDB_E_CLASSNOTREG)
-		{
-			std::cerr << "error: DIA SDK is not installed\n";
-			return 1;
-		}
-
-		hrchk hr;
-	}
 
 	{
 		HRESULT hr = source->loadDataForExe(to_utf16(exepath).c_str(), sympath.empty()? 0: to_utf16(sympath).c_str(), 0);
