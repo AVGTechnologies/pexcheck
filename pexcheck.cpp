@@ -168,11 +168,11 @@ public:
 
 				bool first = true;
 
-				CComPtr<IDiaSymbol> class_parent;
-				if (type->get_classParent(&class_parent) == S_OK)
+				CComPtr<IDiaSymbol> objectPointerType;
+				hrchk type->get_objectPointerType(&objectPointerType);
+				if (objectPointerType)
 				{
-					res.append(format_type(class_parent, simple_unnamed));
-					res.append("*");
+					res.append(format_type(objectPointerType, simple_unnamed));
 					first = false;
 				}
 
