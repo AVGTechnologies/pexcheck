@@ -134,6 +134,38 @@ static std::wstring to_utf16(std::string const & s)
 	return std::wstring(res.data(), len);
 }
 
+struct version_t
+{
+	version_t() : major(0), minor(0), build(0), revision(0)
+	{
+	}
+
+	explicit version_t(const std::string & version_string) : version_t()
+	{
+		std::stringstream version_stream(version_string);
+		char dot;
+		version_stream >> major >> dot >> minor >> dot >> build >> dot >> revision;
+	}
+
+	bool operator<(const version_t & other) const
+	{
+		return std::tie(major, minor, build, revision)
+			< std::tie(other.major, other.minor, other.build, other.revision);
+	}
+
+	bool operator==(const version_t & other) const
+	{
+		return std::tie(major, minor, build, revision)
+			== std::tie(other.major, other.minor, other.build, other.revision);
+	}
+
+private:
+	uint16_t major;
+	uint16_t minor;
+	uint16_t build;
+	uint16_t revision;
+};
+
 struct follow_t
 {
 	std::regex templ;
@@ -143,8 +175,8 @@ struct follow_t
 class type_formatter
 {
 public:
-	explicit type_formatter(std::set<std::string> const & exported_fn_names, std::vector<follow_t> const & follows, std::set<std::string> & follow_matches, int ptr_size)
-		: m_exported_fn_names(exported_fn_names), m_ptr_size(ptr_size), m_follows(follows), m_follow_matches(follow_matches)
+	explicit type_formatter(std::set<std::string> const & exported_fn_names, std::vector<follow_t> const & follows, std::set<std::string> & follow_matches, int ptr_size, version_t pex_version)
+		: m_exported_fn_names(exported_fn_names), m_ptr_size(ptr_size), m_follows(follows), m_follow_matches(follow_matches), m_pex_version(pex_version)
 	{
 	}
 
@@ -168,12 +200,25 @@ public:
 
 				bool first = true;
 
-				CComPtr<IDiaSymbol> class_parent;
-				if (type->get_classParent(&class_parent) == S_OK)
+				if (m_pex_version < version_t("1.0.0.5"))
 				{
-					res.append(format_type(class_parent, simple_unnamed));
-					res.append("*");
-					first = false;
+					CComPtr<IDiaSymbol> class_parent;
+					if (type->get_classParent(&class_parent) == S_OK)
+					{
+						res.append(format_type(class_parent, simple_unnamed));
+						res.append("*");
+						first = false;
+					}
+				}
+				else
+				{
+					CComPtr<IDiaSymbol> objectPointerType;
+					hrchk type->get_objectPointerType(&objectPointerType);
+					if (objectPointerType)
+					{
+						res.append(format_type(objectPointerType, simple_unnamed));
+						first = false;
+					}
 				}
 
 				ULONG celt;
@@ -569,6 +614,7 @@ private:
 	std::vector<follow_t> const & m_follows;
 	std::set<std::string> & m_follow_matches;
 	int m_ptr_size;
+	version_t m_pex_version;
 };
 
 class pe_section_table
@@ -806,6 +852,7 @@ int _main(int argc, char *argv[])
 	std::set<std::string> check_lines;
 	std::vector<follow_t> follow_exprs;
 	std::vector<std::string> config_lines, ignored_checks;
+	version_t version;
 
 	if (!chkpath.empty())
 	{
@@ -834,6 +881,10 @@ int _main(int argc, char *argv[])
 
 			if (line.empty())
 			{
+			}
+			else if (line.substr(0, 13) == "%pex_version ")
+			{
+				version = version_t(line.substr(13));
 			}
 			else if (line == "%exported_functions")
 			{
@@ -963,7 +1014,7 @@ int _main(int argc, char *argv[])
 	}
 
 	std::set<std::string> follow_matches;
-	type_formatter fmt(demangled_exports, follow_exprs, follow_matches, ptr_size);
+	type_formatter fmt(demangled_exports, follow_exprs, follow_matches, ptr_size, version);
 	std::set<std::string> handled_exports;
 
 	size_t last_follow_matches_size = 0;
