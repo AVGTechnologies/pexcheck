@@ -512,11 +512,8 @@ public:
 				hrsok child->get_type(&fn_type);
 
 				std::ostringstream lss;
-				lss << "vfn " << udt_name;
-				if (!ignore_line(lss.str())) {
-					lss << " " << ofs / m_ptr_size << ":" << to_utf8(fn_name) << "(" << this->format_type(fn_type, simple_unnamed) << ")";
-					this->add_line(lss.str());
-				}
+				lss << "vfn " << udt_name << " " << ofs / m_ptr_size << ":" << to_utf8(fn_name) << "(" << this->format_type(fn_type, simple_unnamed) << ")";
+				this->add_line(lss.str());
 			}
 		}
 
@@ -568,9 +565,11 @@ public:
 		m_udts.insert(std::make_pair(type_id, name8));
 
 		std::ostringstream oss;
-		oss << "type " << name8 << this->get_udt_contents(sym, /*simple_unnamed=*/false, name8);
-		if(!ignore_line(oss.str()))
+		oss << "type " << name8;
+		if (!ignore_line(oss.str())) {
+			oss << this->get_udt_contents(sym, /*simple_unnamed=*/false, name8);
 			this->add_line(oss.str());
+		}
 		return name8;
 	}
 
