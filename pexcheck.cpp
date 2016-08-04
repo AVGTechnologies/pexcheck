@@ -759,7 +759,7 @@ static void print_help(char const * argv0)
 	if (argv0[l] == '/' || argv0[l] == '\\')
 		++l;
 
-	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--full-sync] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
+	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--full-sync] [--recursive-ignore] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
 }
 
 int _main(int argc, char *argv[])
@@ -775,6 +775,7 @@ int _main(int argc, char *argv[])
 	bool do_fail = false;
 	bool diff_unks = false;
 	bool full_sync = false;
+	bool recursive_ignore = false;
 	for (int i = 1; i < argc; ++i)
 	{
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
@@ -801,6 +802,10 @@ int _main(int argc, char *argv[])
 		else if (strcmp(argv[i], "--full-sync") == 0)
 		{
 			full_sync = true;
+		}
+		else if (strcmp(argv[i], "--recursive-ignore") == 0)
+		{
+			recursive_ignore = true;
 		}
 		else if (strcmp(argv[i], "-c") == 0)
 		{
@@ -1046,7 +1051,7 @@ int _main(int argc, char *argv[])
 	}
 
 	std::set<std::string> follow_matches;
-	type_formatter fmt(demangled_exports, follow_exprs, ignored_checks, follow_matches, ptr_size, version);
+	type_formatter fmt(demangled_exports, follow_exprs, (recursive_ignore ? ignored_checks : std::vector<std::string>()), follow_matches, ptr_size, version);
 	std::set<std::string> handled_exports;
 
 	size_t last_follow_matches_size = 0;
