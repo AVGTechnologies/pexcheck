@@ -175,8 +175,8 @@ struct follow_t
 class type_formatter
 {
 public:
-	explicit type_formatter(std::set<std::string> const & exported_fn_names, std::vector<follow_t> const & follows, std::set<std::string> & follow_matches, int ptr_size, version_t pex_version)
-		: m_exported_fn_names(exported_fn_names), m_ptr_size(ptr_size), m_follows(follows), m_follow_matches(follow_matches), m_pex_version(pex_version)
+	explicit type_formatter(std::set<std::string> const & exported_fn_names, std::vector<follow_t> const & follows, std::vector<std::string> const & ignored_checks, std::set<std::string> & follow_matches, int ptr_size, version_t pex_version)
+		: m_exported_fn_names(exported_fn_names), m_ptr_size(ptr_size), m_follows(follows), m_ignored_checks(ignored_checks), m_follow_matches(follow_matches), m_pex_version(pex_version)
 	{
 	}
 
@@ -380,10 +380,12 @@ public:
 			tmp.append("fn ");
 
 		tmp.append(to_utf8(fn_name.m_str));
-		tmp.append(" ");
-		tmp.append(this->format_type(fn_type, /*simple_unnamed=*/false));
+		if (!ignore_line(tmp)) {
+			tmp.append(" ");
+			tmp.append(this->format_type(fn_type, /*simple_unnamed=*/false));
 
-		this->add_line(tmp);
+			this->add_line(tmp);
+		}
 	}
 
 	std::string get_udt_name(CComPtr<IDiaSymbol> const & sym, bool simple_unnamed)
@@ -510,8 +512,11 @@ public:
 				hrsok child->get_type(&fn_type);
 
 				std::ostringstream lss;
-				lss << "vfn " << udt_name << " " << ofs / m_ptr_size << ":" << to_utf8(fn_name) << "(" << this->format_type(fn_type, simple_unnamed) << ")";
-				this->add_line(lss.str());
+				lss << "vfn " << udt_name;
+				if (!ignore_line(lss.str())) {
+					lss << " " << ofs / m_ptr_size << ":" << to_utf8(fn_name) << "(" << this->format_type(fn_type, simple_unnamed) << ")";
+					this->add_line(lss.str());
+				}
 			}
 		}
 
@@ -564,7 +569,8 @@ public:
 
 		std::ostringstream oss;
 		oss << "type " << name8 << this->get_udt_contents(sym, /*simple_unnamed=*/false, name8);
-		this->add_line(oss.str());
+		if(!ignore_line(oss.str()))
+			this->add_line(oss.str());
 		return name8;
 	}
 
@@ -585,6 +591,17 @@ public:
 		return res;
 	}
 
+	std::set<std::string> get_added_lines(std::set<std::string> const & templ, bool remove_unks)
+	{
+		std::set<std::string> res;
+		std::set_difference(m_lines.begin(), m_lines.end(), templ.begin(), templ.end(), std::inserter(res, res.begin()));
+
+		if (remove_unks)
+			res.erase(res.lower_bound("unk "), res.lower_bound("unk!"));
+
+		return res;
+	}
+
 	void add_unknowns(std::set<std::string> const & handled_exports)
 	{
 		std::set<std::string> unhandled_exports;
@@ -594,9 +611,19 @@ public:
 	}
 
 private:
+	bool ignore_line(std::string const & line)
+	{
+		for (std::string const & ig : m_ignored_checks)
+			if (line.size() >= ig.size() && line.substr(0, ig.size()) == ig)
+				return true;
+
+		return false;
+	}
+
 	void add_line(std::string const & line)
 	{
 		m_lines.insert(line);
+
 		for (auto && follow : m_follows)
 		{
 			std::match_results<std::string::const_iterator> mrs;
@@ -611,6 +638,7 @@ private:
 	std::map<DWORD, std::string> m_udts;
 	std::set<std::string> m_lines;
 	std::set<std::string> m_exported_fn_names;
+	std::vector<std::string> m_ignored_checks;
 	std::vector<follow_t> const & m_follows;
 	std::set<std::string> & m_follow_matches;
 	int m_ptr_size;
@@ -732,7 +760,7 @@ static void print_help(char const * argv0)
 	if (argv0[l] == '/' || argv0[l] == '\\')
 		++l;
 
-	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
+	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--full-sync] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
 }
 
 int _main(int argc, char *argv[])
@@ -747,6 +775,7 @@ int _main(int argc, char *argv[])
 	bool no_unks = false;
 	bool do_fail = false;
 	bool diff_unks = false;
+	bool full_sync = false;
 	for (int i = 1; i < argc; ++i)
 	{
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
@@ -769,6 +798,10 @@ int _main(int argc, char *argv[])
 		else if (strcmp(argv[i], "--no-dia-fail") == 0)
 		{
 			no_dia_fail = true;
+		}
+		else if (strcmp(argv[i], "--full-sync") == 0)
+		{
+			full_sync = true;
 		}
 		else if (strcmp(argv[i], "-c") == 0)
 		{
@@ -1014,7 +1047,7 @@ int _main(int argc, char *argv[])
 	}
 
 	std::set<std::string> follow_matches;
-	type_formatter fmt(demangled_exports, follow_exprs, follow_matches, ptr_size, version);
+	type_formatter fmt(demangled_exports, follow_exprs, ignored_checks, follow_matches, ptr_size, version);
 	std::set<std::string> handled_exports;
 
 	size_t last_follow_matches_size = 0;
@@ -1143,7 +1176,8 @@ int _main(int argc, char *argv[])
 		}
 
 		std::set<std::string> removed_lines = fmt.get_removed_lines(check_lines, /*remove_unks=*/!diff_unks);
-		if (!removed_lines.empty())
+		std::set<std::string> added_lines = fmt.get_added_lines(check_lines, /*remove_unks=*/!diff_unks);
+		if (!removed_lines.empty() || (full_sync && !added_lines.empty()))
 		{
 			std::cout << (diffpath == "-"? chkpath: diffpath) << "(1): " << (succeed? "warning": "error") << ": cross-module compatibility check failed\n";
 			if (!chkpath.empty() && diffpath != "-")
@@ -1151,6 +1185,10 @@ int _main(int argc, char *argv[])
 
 			for (std::set<std::string>::const_iterator it = removed_lines.begin(); it != removed_lines.end(); ++it)
 				*out << '-' << *it << '\n';
+
+			if (full_sync)
+				for (std::set<std::string>::const_iterator it = added_lines.begin(); it != added_lines.end(); ++it)
+					*out << '+' << *it << '\n';
 
 			if (!succeed || do_fail)
 				return 1;
