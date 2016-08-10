@@ -380,7 +380,8 @@ public:
 			tmp.append("fn ");
 
 		tmp.append(to_utf8(fn_name.m_str));
-		if (!ignore_line(tmp)) {
+		if (!ignore_symbol(tmp))
+		{
 			tmp.append(" ");
 			tmp.append(this->format_type(fn_type, /*simple_unnamed=*/false));
 
@@ -566,7 +567,8 @@ public:
 
 		std::ostringstream oss;
 		oss << "type " << name8;
-		if (!ignore_line(oss.str())) {
+		if (!ignore_symbol(oss.str()))
+		{
 			oss << this->get_udt_contents(sym, /*simple_unnamed=*/false, name8);
 			this->add_line(oss.str());
 		}
@@ -610,13 +612,9 @@ public:
 	}
 
 private:
-	bool ignore_line(std::string const & line)
+	bool ignore_symbol(std::string const & symbol)
 	{
-		for (std::string const & ig : m_ignored_checks)
-			if (line.size() >= ig.size() && line.substr(0, ig.size()) == ig)
-				return true;
-
-		return false;
+		return std::binary_search(m_ignored_checks.begin(), m_ignored_checks.end(), symbol);
 	}
 
 	void add_line(std::string const & line)
@@ -980,20 +978,7 @@ int _main(int argc, char *argv[])
 		}
 
 		while (std::getline(fin, line))
-		{
-			bool ignore = false;
-			for (std::string const & ig : ignored_checks)
-			{
-				if (line.size() >= ig.size() && line.substr(0, ig.size()) == ig)
-				{
-					ignore = true;
-					break;
-				}
-			}
-
-			if (!ignore)
-				check_lines.insert(line);
-		}
+			check_lines.insert(line);
 
 		if (fin.bad())
 		{
@@ -1005,6 +990,8 @@ int _main(int argc, char *argv[])
 	{
 		config_lines.push_back("%exported_functions");
 	}
+
+	std::sort(ignored_checks.begin(), ignored_checks.end());
 
 	if (check_lines.empty() && outputpath.empty())
 		outputpath = "-";
