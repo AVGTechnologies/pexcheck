@@ -978,7 +978,25 @@ int _main(int argc, char *argv[])
 		}
 
 		while (std::getline(fin, line))
-			check_lines.insert(line);
+		{
+			if (recursive_ignore)
+				check_lines.insert(line);
+			else
+			{
+				bool ignore = false;
+				for (std::string const & ig : ignored_checks)
+				{
+					if (line.size() >= ig.size() && line.substr(0, ig.size()) == ig)
+					{
+						ignore = true;
+						break;
+					}
+				}
+
+				if (!ignore)
+					check_lines.insert(line);
+			}
+		}
 
 		if (fin.bad())
 		{
