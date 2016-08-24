@@ -136,34 +136,98 @@ static std::wstring to_utf16(std::string const & s)
 
 struct version_t
 {
-	version_t() : major(0), minor(0), build(0), revision(0)
+	version_t()
+		: v()
 	{
 	}
 
-	explicit version_t(const std::string & version_string) : version_t()
+	version_t(std::initializer_list<uint16_t> components)
+		: version_t()
 	{
-		std::stringstream version_stream(version_string);
-		char dot;
-		version_stream >> major >> dot >> minor >> dot >> build >> dot >> revision;
+		assert(components.size() <= 4);
+		std::copy(components.begin(), components.end(), v);
+	}
+
+	version_t(char const * s)
+		: version_t(s, s + strlen(s))
+	{
+	}
+
+	version_t(std::string const & s)
+		: version_t(s.data(), s.data() + s.size())
+	{
+	}
+
+	version_t(char const * first, char const * last)
+		: version_t()
+	{
+		auto cur = first;
+
+		auto extract_component = [&] {
+			if (cur == last || *cur == '.')
+				throw std::runtime_error("not a number");
+
+			uint16_t r = 0;
+			for (; cur != last && *cur != '.'; ++cur)
+			{
+				uint16_t next;
+				if ('0' <= *cur && *cur <= '9')
+					next = r * 10 + (*cur - '0');
+				else
+					throw std::runtime_error("not a number");
+				if (next < r)
+					throw std::runtime_error("numeric overflow");
+				r = next;
+			}
+
+			if (cur != last)
+				++cur;
+
+			return r;
+		};
+
+		v[0] = extract_component();
+		v[1] = extract_component();
+		if (cur != last)
+			v[2] = extract_component();
+		if (cur != last)
+			v[3] = extract_component();
+		if (cur != last)
+			throw std::runtime_error("not a version");
 	}
 
 	bool operator<(const version_t & other) const
 	{
-		return std::tie(major, minor, build, revision)
-			< std::tie(other.major, other.minor, other.build, other.revision);
+		return std::lexicographical_compare(v, v + 4, other.v, other.v + 4);
+	}
+
+	bool operator>(const version_t & other) const
+	{
+		return other < *this;
+	}
+
+	bool operator<=(const version_t & other) const
+	{
+		return !(other < *this);
+	}
+
+	bool operator>=(const version_t & other) const
+	{
+		return !(*this < other);
 	}
 
 	bool operator==(const version_t & other) const
 	{
-		return std::tie(major, minor, build, revision)
-			== std::tie(other.major, other.minor, other.build, other.revision);
+		return std::equal(v, v + 4, other.v);
+	}
+
+	bool operator!=(const version_t & other) const
+	{
+		return !(*this == other);
 	}
 
 private:
-	uint16_t major;
-	uint16_t minor;
-	uint16_t build;
-	uint16_t revision;
+	uint16_t v[4];
 };
 
 struct follow_t
@@ -200,7 +264,7 @@ public:
 
 				bool first = true;
 
-				if (m_pex_version < version_t("1.0.0.5"))
+				if (m_pex_version < version_t{ 1, 0, 0, 5 })
 				{
 					CComPtr<IDiaSymbol> class_parent;
 					if (type->get_classParent(&class_parent) == S_OK)
@@ -919,7 +983,7 @@ int _main(int argc, char *argv[])
 			}
 			else if (line.substr(0, 13) == "%pex_version ")
 			{
-				version = version_t(line.substr(13));
+				version = line.substr(13);
 			}
 			else if (line == "%exported_functions")
 			{
