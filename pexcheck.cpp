@@ -824,6 +824,28 @@ static void print_help(char const * argv0)
 	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--full-sync] [--recursive-ignore] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
 }
 
+static version_t get_module_version(HMODULE mod)
+{
+	HRSRC hRsrc = FindResourceW(mod, MAKEINTRESOURCE(1), RT_VERSION);
+	if (!hRsrc)
+		throw std::runtime_error("no version info");
+
+	HGLOBAL hRsrcMem = LoadResource(mod, hRsrc);
+	void * rsrc = LockResource(hRsrcMem);
+	assert(rsrc);
+
+	VS_FIXEDFILEINFO * ffi;
+
+	UINT len;
+	if (!VerQueryValueW(rsrc, L"\\", (void **)&ffi, &len))
+		throw std::runtime_error("VerQueryValueW failed");
+
+	if (len < sizeof *ffi || ffi->dwSignature != VS_FFI_SIGNATURE)
+		throw std::runtime_error("corrupted version info");
+
+	return version_t{ HIWORD(ffi->dwFileVersionMS), LOWORD(ffi->dwFileVersionMS), HIWORD(ffi->dwFileVersionLS), LOWORD(ffi->dwFileVersionLS) };
+}
+
 int _main(int argc, char *argv[])
 {
 	std::string exepath;
@@ -838,12 +860,22 @@ int _main(int argc, char *argv[])
 	bool diff_unks = false;
 	bool full_sync = false;
 	bool recursive_ignore = false;
+	version_t version = get_module_version(0);
 	for (int i = 1; i < argc; ++i)
 	{
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
 		{
 			print_help(argv[0]);
 			return 0;
+		}
+		else if (strcmp(argv[i], "--as-version") == 0)
+		{
+			if (++i >= argc)
+			{
+				print_help(argv[0]);
+				return 2;
+			}
+			version = argv[i];
 		}
 		else if (strcmp(argv[i], "--warning") == 0)
 		{
@@ -951,7 +983,6 @@ int _main(int argc, char *argv[])
 	std::set<std::string> check_lines;
 	std::vector<follow_t> follow_exprs;
 	std::vector<std::string> config_lines, ignored_checks;
-	version_t version;
 
 	if (!chkpath.empty())
 	{
