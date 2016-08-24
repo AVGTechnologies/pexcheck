@@ -1156,6 +1156,16 @@ int _main(int argc, char *argv[])
 						handled_exports.insert(name8);
 					}
 				}
+
+				if (!do_add)
+				{
+					CComBSTR mangled_name;
+					hrchk globalFunction->get_name(&mangled_name);
+
+					std::string name8 = to_utf8(mangled_name);
+					if (exported_names.find(name8) != exported_names.end())
+						do_add = true;
+				}
 			}
 
 			if (!do_add)
