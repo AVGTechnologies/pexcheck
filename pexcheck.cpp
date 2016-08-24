@@ -603,7 +603,14 @@ public:
 				hrsok child->get_type(&data_type);
 
 				std::ostringstream lss;
-				lss << ofs << ":var:" << this->format_type(data_type, simple_unnamed);
+				lss << ofs << ":var:";
+				if (m_pex_version >= version_t{ 1, 4 })
+				{
+					CComBSTR name;
+					hrsok child->get_name(&name);
+					lss << to_utf8(name) << ":";
+				}
+				lss << this->format_type(data_type, simple_unnamed);
 				data.push_back(std::make_pair(ofs, lss.str()));
 			}
 
