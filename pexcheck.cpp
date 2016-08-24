@@ -821,7 +821,7 @@ static void print_help(char const * argv0)
 	if (argv0[l] == '/' || argv0[l] == '\\')
 		++l;
 
-	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--full-sync] [--recursive-ignore] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
+	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
 }
 
 static version_t get_module_version(HMODULE mod)
@@ -858,9 +858,8 @@ int _main(int argc, char *argv[])
 	bool no_unks = false;
 	bool do_fail = false;
 	bool diff_unks = false;
-	bool full_sync = false;
-	bool recursive_ignore = false;
 	version_t version = get_module_version(0);
+
 	for (int i = 1; i < argc; ++i)
 	{
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
@@ -892,14 +891,6 @@ int _main(int argc, char *argv[])
 		else if (strcmp(argv[i], "--no-dia-fail") == 0)
 		{
 			no_dia_fail = true;
-		}
-		else if (strcmp(argv[i], "--full-sync") == 0)
-		{
-			full_sync = true;
-		}
-		else if (strcmp(argv[i], "--recursive-ignore") == 0)
-		{
-			recursive_ignore = true;
 		}
 		else if (strcmp(argv[i], "-c") == 0)
 		{
@@ -1074,23 +1065,7 @@ int _main(int argc, char *argv[])
 
 		while (std::getline(fin, line))
 		{
-			if (recursive_ignore)
-				check_lines.insert(line);
-			else
-			{
-				bool ignore = false;
-				for (std::string const & ig : ignored_checks)
-				{
-					if (line.size() >= ig.size() && line.substr(0, ig.size()) == ig)
-					{
-						ignore = true;
-						break;
-					}
-				}
-
-				if (!ignore)
-					check_lines.insert(line);
-			}
+			check_lines.insert(line);
 		}
 
 		if (fin.bad())
@@ -1151,7 +1126,7 @@ int _main(int argc, char *argv[])
 	}
 
 	std::set<std::string> follow_matches;
-	type_formatter fmt(demangled_exports, follow_exprs, (recursive_ignore ? ignored_checks : std::vector<std::string>()), follow_matches, ptr_size, version);
+	type_formatter fmt(demangled_exports, follow_exprs, ignored_checks, follow_matches, ptr_size, version);
 	std::set<std::string> handled_exports;
 
 	size_t last_follow_matches_size = 0;
@@ -1281,7 +1256,7 @@ int _main(int argc, char *argv[])
 
 		std::set<std::string> removed_lines = fmt.get_removed_lines(check_lines, /*remove_unks=*/!diff_unks);
 		std::set<std::string> added_lines = fmt.get_added_lines(check_lines, /*remove_unks=*/!diff_unks);
-		if (!removed_lines.empty() || (full_sync && !added_lines.empty()))
+		if (!removed_lines.empty() || !added_lines.empty())
 		{
 			std::cout << (diffpath == "-"? chkpath: diffpath) << "(1): " << (succeed? "warning": "error") << ": cross-module compatibility check failed\n";
 			if (!chkpath.empty() && diffpath != "-")
@@ -1290,9 +1265,8 @@ int _main(int argc, char *argv[])
 			for (std::set<std::string>::const_iterator it = removed_lines.begin(); it != removed_lines.end(); ++it)
 				*out << '-' << *it << '\n';
 
-			if (full_sync)
-				for (std::set<std::string>::const_iterator it = added_lines.begin(); it != added_lines.end(); ++it)
-					*out << '+' << *it << '\n';
+			for (std::set<std::string>::const_iterator it = added_lines.begin(); it != added_lines.end(); ++it)
+				*out << '+' << *it << '\n';
 
 			if (!succeed || do_fail)
 				return 1;
