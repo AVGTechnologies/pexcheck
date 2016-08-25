@@ -136,34 +136,101 @@ static std::wstring to_utf16(std::string const & s)
 
 struct version_t
 {
-	version_t() : major(0), minor(0), build(0), revision(0)
+	version_t()
+		: v()
 	{
 	}
 
-	explicit version_t(const std::string & version_string) : version_t()
+	version_t(std::initializer_list<uint16_t> components)
+		: version_t()
 	{
-		std::stringstream version_stream(version_string);
-		char dot;
-		version_stream >> major >> dot >> minor >> dot >> build >> dot >> revision;
+		assert(components.size() <= 4);
+		std::copy(components.begin(), components.end(), v);
 	}
+
+	version_t(char const * s)
+		: version_t(s, s + strlen(s))
+	{
+	}
+
+	version_t(std::string const & s)
+		: version_t(s.data(), s.data() + s.size())
+	{
+	}
+
+	version_t(char const * first, char const * last)
+		: version_t()
+	{
+		auto cur = first;
+
+		auto extract_component = [&] {
+			if (cur == last || *cur == '.')
+				throw std::runtime_error("not a number");
+
+			uint16_t r = 0;
+			for (; cur != last && *cur != '.'; ++cur)
+			{
+				uint16_t next;
+				if ('0' <= *cur && *cur <= '9')
+					next = r * 10 + (*cur - '0');
+				else
+					throw std::runtime_error("not a number");
+				if (next < r)
+					throw std::runtime_error("numeric overflow");
+				r = next;
+			}
+
+			if (cur != last)
+				++cur;
+
+			return r;
+		};
+
+		v[0] = extract_component();
+		v[1] = extract_component();
+		if (cur != last)
+			v[2] = extract_component();
+		if (cur != last)
+			v[3] = extract_component();
+		if (cur != last)
+			throw std::runtime_error("not a version");
+	}
+
+	uint16_t major() const { return v[0]; }
+	uint16_t minor() const { return v[1]; }
 
 	bool operator<(const version_t & other) const
 	{
-		return std::tie(major, minor, build, revision)
-			< std::tie(other.major, other.minor, other.build, other.revision);
+		return std::lexicographical_compare(v, v + 4, other.v, other.v + 4);
+	}
+
+	bool operator>(const version_t & other) const
+	{
+		return other < *this;
+	}
+
+	bool operator<=(const version_t & other) const
+	{
+		return !(other < *this);
+	}
+
+	bool operator>=(const version_t & other) const
+	{
+		return !(*this < other);
 	}
 
 	bool operator==(const version_t & other) const
 	{
-		return std::tie(major, minor, build, revision)
-			== std::tie(other.major, other.minor, other.build, other.revision);
+		return std::equal(v, v + 4, other.v);
+	}
+
+	bool operator!=(const version_t & other) const
+	{
+		return !(*this == other);
 	}
 
 private:
-	uint16_t major;
-	uint16_t minor;
-	uint16_t build;
-	uint16_t revision;
+	uint16_t v[4];
 };
 
 struct follow_t
@@ -200,7 +267,7 @@ public:
 
 				bool first = true;
 
-				if (m_pex_version < version_t("1.0.0.5"))
+				if (m_pex_version < version_t{ 1, 0, 0, 5 })
 				{
 					CComPtr<IDiaSymbol> class_parent;
 					if (type->get_classParent(&class_parent) == S_OK)
@@ -539,7 +606,14 @@ public:
 				hrsok child->get_type(&data_type);
 
 				std::ostringstream lss;
-				lss << ofs << ":var:" << this->format_type(data_type, simple_unnamed);
+				lss << ofs << ":var:";
+				if (m_pex_version >= version_t{ 1, 4 })
+				{
+					CComBSTR name;
+					hrsok child->get_name(&name);
+					lss << to_utf8(name) << ":";
+				}
+				lss << this->format_type(data_type, simple_unnamed);
 				data.push_back(std::make_pair(ofs, lss.str()));
 			}
 
@@ -748,6 +822,30 @@ std::set<std::string> get_exported_addresses(std::string const & fname, int & pt
 	return exported_names;
 }
 
+static version_t get_module_version(HMODULE mod)
+{
+	HRSRC hRsrc = FindResourceW(mod, MAKEINTRESOURCE(1), RT_VERSION);
+	if (!hRsrc)
+		throw std::runtime_error("no version info");
+
+	HGLOBAL hRsrcMem = LoadResource(mod, hRsrc);
+	void * rsrc = LockResource(hRsrcMem);
+	assert(rsrc);
+
+	VS_FIXEDFILEINFO * ffi;
+
+	UINT len;
+	if (!VerQueryValueW(rsrc, L"\\", (void **)&ffi, &len))
+		throw std::runtime_error("VerQueryValueW failed");
+
+	if (len < sizeof *ffi || ffi->dwSignature != VS_FFI_SIGNATURE)
+		throw std::runtime_error("corrupted version info");
+
+	return version_t{ HIWORD(ffi->dwFileVersionMS), LOWORD(ffi->dwFileVersionMS), HIWORD(ffi->dwFileVersionLS), LOWORD(ffi->dwFileVersionLS) };
+}
+
+version_t const current_version = get_module_version(0);
+
 static void print_help(char const * argv0)
 {
 	size_t l = strlen(argv0);
@@ -757,7 +855,23 @@ static void print_help(char const * argv0)
 	if (argv0[l] == '/' || argv0[l] == '\\')
 		++l;
 
-	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--full-sync] [--recursive-ignore] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
+	std::cout <<
+		"Creates the description of the public interface of a shared library.\n"
+		"\n"
+		"Usage: " << argv0 + l << " [options] PEFILE\n"
+		"\n"
+		"Options:\n"
+		"\n"
+		"    -o OUTPUTFILE    emit the description to OUTPUTFILE instead of stdout\n"
+		"    -y SYMPATH       use SYMPATH as symbol path\n"
+		"    -c CHECKFILE     use header in CHECKFILE to create the description\n"
+		"                     and output the diff\n"
+		"    --diff FILE      (only with -c) output the diff to FILE\n"
+		"    --pex-version V  change the default pex_version from " << current_version.major() << "." << current_version.minor() << " to V\n"
+		"    --warning        don't fail even if the diff is non-empty\n"
+		"    --do-fail        overrides --warning\n"
+		"    --no-dia-fail    only print a warning if DIA SDK is unavailable and succeed\n"
+		"\n";
 }
 
 int _main(int argc, char *argv[])
@@ -772,14 +886,23 @@ int _main(int argc, char *argv[])
 	bool no_unks = false;
 	bool do_fail = false;
 	bool diff_unks = false;
-	bool full_sync = false;
-	bool recursive_ignore = false;
+	version_t version = current_version;
+
 	for (int i = 1; i < argc; ++i)
 	{
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
 		{
 			print_help(argv[0]);
 			return 0;
+		}
+		else if (strcmp(argv[i], "--pex-version") == 0)
+		{
+			if (++i >= argc)
+			{
+				print_help(argv[0]);
+				return 2;
+			}
+			version = argv[i];
 		}
 		else if (strcmp(argv[i], "--warning") == 0)
 		{
@@ -796,14 +919,6 @@ int _main(int argc, char *argv[])
 		else if (strcmp(argv[i], "--no-dia-fail") == 0)
 		{
 			no_dia_fail = true;
-		}
-		else if (strcmp(argv[i], "--full-sync") == 0)
-		{
-			full_sync = true;
-		}
-		else if (strcmp(argv[i], "--recursive-ignore") == 0)
-		{
-			recursive_ignore = true;
 		}
 		else if (strcmp(argv[i], "-c") == 0)
 		{
@@ -887,7 +1002,6 @@ int _main(int argc, char *argv[])
 	std::set<std::string> check_lines;
 	std::vector<follow_t> follow_exprs;
 	std::vector<std::string> config_lines, ignored_checks;
-	version_t version;
 
 	if (!chkpath.empty())
 	{
@@ -919,7 +1033,7 @@ int _main(int argc, char *argv[])
 			}
 			else if (line.substr(0, 13) == "%pex_version ")
 			{
-				version = version_t(line.substr(13));
+				version = line.substr(13);
 			}
 			else if (line == "%exported_functions")
 			{
@@ -979,23 +1093,7 @@ int _main(int argc, char *argv[])
 
 		while (std::getline(fin, line))
 		{
-			if (recursive_ignore)
-				check_lines.insert(line);
-			else
-			{
-				bool ignore = false;
-				for (std::string const & ig : ignored_checks)
-				{
-					if (line.size() >= ig.size() && line.substr(0, ig.size()) == ig)
-					{
-						ignore = true;
-						break;
-					}
-				}
-
-				if (!ignore)
-					check_lines.insert(line);
-			}
+			check_lines.insert(line);
 		}
 
 		if (fin.bad())
@@ -1056,7 +1154,7 @@ int _main(int argc, char *argv[])
 	}
 
 	std::set<std::string> follow_matches;
-	type_formatter fmt(demangled_exports, follow_exprs, (recursive_ignore ? ignored_checks : std::vector<std::string>()), follow_matches, ptr_size, version);
+	type_formatter fmt(demangled_exports, follow_exprs, ignored_checks, follow_matches, ptr_size, version);
 	std::set<std::string> handled_exports;
 
 	size_t last_follow_matches_size = 0;
@@ -1085,6 +1183,16 @@ int _main(int argc, char *argv[])
 						do_add = true;
 						handled_exports.insert(name8);
 					}
+				}
+
+				if (!do_add)
+				{
+					CComBSTR mangled_name;
+					hrchk globalFunction->get_name(&mangled_name);
+
+					std::string name8 = to_utf8(mangled_name);
+					if (exported_names.find(name8) != exported_names.end())
+						do_add = true;
 				}
 			}
 
@@ -1186,7 +1294,7 @@ int _main(int argc, char *argv[])
 
 		std::set<std::string> removed_lines = fmt.get_removed_lines(check_lines, /*remove_unks=*/!diff_unks);
 		std::set<std::string> added_lines = fmt.get_added_lines(check_lines, /*remove_unks=*/!diff_unks);
-		if (!removed_lines.empty() || (full_sync && !added_lines.empty()))
+		if (!removed_lines.empty() || !added_lines.empty())
 		{
 			std::cout << (diffpath == "-"? chkpath: diffpath) << "(1): " << (succeed? "warning": "error") << ": cross-module compatibility check failed\n";
 			if (!chkpath.empty() && diffpath != "-")
@@ -1195,9 +1303,8 @@ int _main(int argc, char *argv[])
 			for (std::set<std::string>::const_iterator it = removed_lines.begin(); it != removed_lines.end(); ++it)
 				*out << '-' << *it << '\n';
 
-			if (full_sync)
-				for (std::set<std::string>::const_iterator it = added_lines.begin(); it != added_lines.end(); ++it)
-					*out << '+' << *it << '\n';
+			for (std::set<std::string>::const_iterator it = added_lines.begin(); it != added_lines.end(); ++it)
+				*out << '+' << *it << '\n';
 
 			if (!succeed || do_fail)
 				return 1;
