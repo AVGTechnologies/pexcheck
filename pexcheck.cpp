@@ -196,6 +196,9 @@ struct version_t
 			throw std::runtime_error("not a version");
 	}
 
+	uint16_t major() const { return v[0]; }
+	uint16_t minor() const { return v[1]; }
+
 	bool operator<(const version_t & other) const
 	{
 		return std::lexicographical_compare(v, v + 4, other.v, other.v + 4);
@@ -819,18 +822,6 @@ std::set<std::string> get_exported_addresses(std::string const & fname, int & pt
 	return exported_names;
 }
 
-static void print_help(char const * argv0)
-{
-	size_t l = strlen(argv0);
-	while (l != 0 && argv0[l - 1] != '/' && argv0[l - 1] != '\\')
-		--l;
-
-	if (argv0[l] == '/' || argv0[l] == '\\')
-		++l;
-
-	std::cout << "Usage: " << argv0 + l << " [--warning] [--do-fail] [--no-dia-fail] [--no-unks] [--diff DIFFFILE] [--diff-unks] [-y SYMPATH] [-c CHECKFILE] [-o OUTPUTFILE] PEFILE" << std::endl;
-}
-
 static version_t get_module_version(HMODULE mod)
 {
 	HRSRC hRsrc = FindResourceW(mod, MAKEINTRESOURCE(1), RT_VERSION);
@@ -853,6 +844,36 @@ static version_t get_module_version(HMODULE mod)
 	return version_t{ HIWORD(ffi->dwFileVersionMS), LOWORD(ffi->dwFileVersionMS), HIWORD(ffi->dwFileVersionLS), LOWORD(ffi->dwFileVersionLS) };
 }
 
+version_t const current_version = get_module_version(0);
+
+static void print_help(char const * argv0)
+{
+	size_t l = strlen(argv0);
+	while (l != 0 && argv0[l - 1] != '/' && argv0[l - 1] != '\\')
+		--l;
+
+	if (argv0[l] == '/' || argv0[l] == '\\')
+		++l;
+
+	std::cout <<
+		"Creates the description of the public interface of a shared library.\n"
+		"\n"
+		"Usage: " << argv0 + l << " [options] PEFILE\n"
+		"\n"
+		"Options:\n"
+		"\n"
+		"    -o OUTPUTFILE    emit the description to OUTPUTFILE instead of stdout\n"
+		"    -y SYMPATH       use SYMPATH as symbol path\n"
+		"    -c CHECKFILE     use header in CHECKFILE to create the description\n"
+		"                     and output the diff\n"
+		"    --diff FILE      (only with -c) output the diff to FILE\n"
+		"    --pex-version V  change the default pex_version from " << current_version.major() << "." << current_version.minor() << " to V\n"
+		"    --warning        don't fail even if the diff is non-empty\n"
+		"    --do-fail        overrides --warning\n"
+		"    --no-dia-fail    only print a warning if DIA SDK is unavailable and succeed\n"
+		"\n";
+}
+
 int _main(int argc, char *argv[])
 {
 	std::string exepath;
@@ -865,7 +886,7 @@ int _main(int argc, char *argv[])
 	bool no_unks = false;
 	bool do_fail = false;
 	bool diff_unks = false;
-	version_t version = get_module_version(0);
+	version_t version = current_version;
 
 	for (int i = 1; i < argc; ++i)
 	{
@@ -874,7 +895,7 @@ int _main(int argc, char *argv[])
 			print_help(argv[0]);
 			return 0;
 		}
-		else if (strcmp(argv[i], "--as-version") == 0)
+		else if (strcmp(argv[i], "--pex-version") == 0)
 		{
 			if (++i >= argc)
 			{
